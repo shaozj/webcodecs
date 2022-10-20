@@ -1,0 +1,83 @@
+<!doctype html>
+<style>
+  body {
+    font-family: sans-serif;
+    color: #444;
+    font-weight: 300;
+    font-size:  larger;
+  }
+  button {
+    font-size: larger;
+  }
+  #controls {
+    margin-bottom: 10px;
+  }
+  #loading {
+    font-size: 2em;
+  }
+  .monospace {
+    font-family: monospace;
+  }
+  div#container {
+    margin: 0 auto 0 auto;
+    max-width: 60em;
+    padding: 1em 1.5em 1.3em 1.5em;
+  }
+  canvas {
+    outline: 1px solid black;
+  }
+</style>
+<div id=container>
+  <p>
+    This sample shows memory leak when using VideoDecoder. Open chrome's task manager, clip Close button (
+    close all videoFrames and decoders) and Init button ( init 20 new decoders) multiple times, you can see
+    the memory of this page keep incresing. Even refresh the page can not reduce the memory usage of this page.
+  </p>
+  <div id=controls>
+    <button id=init>Init 20 decoders and decode some frames</button>
+    <button id="close">Close all videoFrames and decoders</button>
+  </div>
+</div>
+<script type="module">
+
+// Transfer canvas to offscreen. Painting will be performed by worker without
+// blocking the Window main thread.
+window.$ = document.querySelector.bind(document);
+
+const mediaWorkers = [];
+async function initAll() {
+  console.log('=========initAll================');
+  for (let i = 0; i < 20; i++) {
+    let mediaWorker = new Worker('./media_worker.js');
+    mediaWorker.postMessage({
+      command: 'initialize',
+      videoFile: '../data/bbb_video_avc_frag.mp4',
+    });
+
+    // Wait for worker initialization. Use metadata to init the WebAudioController.
+    let initResolver = null;
+    let initDone = new Promise(resolver => (initResolver = resolver));
+    mediaWorker.addEventListener('message', (e) => {
+      console.assert(e.data.command == 'initialize-done');
+      initResolver();
+      initResolver = null;
+    });
+    await initDone;
+    mediaWorkers.push(mediaWorker);
+  }
+}
+
+await initAll();
+
+$('#init').onclick = () => {
+  initAll();
+}
+
+$('#close').onclick = () => {
+  for (const mediaWorker of mediaWorkers) {
+    mediaWorker.postMessage({ command: 'dispose' });
+  }
+}
+
+</script>
+</html>

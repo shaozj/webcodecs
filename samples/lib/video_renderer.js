@@ -1,5 +1,4 @@
 import { VIDEO_STREAM_TYPE } from "./pull_demuxer_base.js";
-import { MP4PullDemuxer } from "../audio-video-player/mp4_pull_demuxer.js";
 
 const FRAME_BUFFER_TARGET_SIZE = 3;
 const ENABLE_DEBUG_LOGGING = false;
@@ -14,18 +13,13 @@ function debugLog(msg) {
 // VideoFrames to canvas. Maintains a buffer of FRAME_BUFFER_TARGET_SIZE
 // decoded frames for future rendering.
 export class VideoRenderer {
-  async initialize(demuxer, canvas) {
+  async initialize(demuxer) {
     this.frameBuffer = [];
     this.fillInProgress = false;
 
     this.demuxer = demuxer;
     await this.demuxer.initialize(VIDEO_STREAM_TYPE);
     const config = this.demuxer.getDecoderConfig();
-
-    this.canvas = canvas;
-    this.canvas.width = config.displayWidth;
-    this.canvas.height = config.displayHeight;
-    this.canvasCtx = canvas.getContext('2d');
 
     this.decoder = new VideoDecoder({
       output: this.bufferFrame.bind(this),
@@ -39,51 +33,6 @@ export class VideoRenderer {
 
     this.fillFrameBuffer();
     return promise;
-  }
-
-  render(timestamp) {
-    debugLog('render(%d)', timestamp);
-    let frame = this.chooseFrame(timestamp);
-    this.fillFrameBuffer();
-
-    if (frame == null) {
-      console.warn('VideoRenderer.render(): no frame ');
-      return;
-    }
-
-    this.paint(frame);
-  }
-
-  chooseFrame(timestamp) {
-    if (this.frameBuffer.length == 0)
-      return null;
-
-    let minTimeDelta = Number.MAX_VALUE;
-    let frameIndex = -1;
-
-    for (let i = 0; i < this.frameBuffer.length; i++) {
-      let time_delta = Math.abs(timestamp - this.frameBuffer[i].timestamp);
-      if (time_delta < minTimeDelta) {
-        minTimeDelta = time_delta;
-        frameIndex = i;
-      } else {
-        break;
-      }
-    }
-
-    console.assert(frameIndex != -1);
-
-    if (frameIndex > 0)
-      debugLog('dropping %d stale frames', frameIndex);
-
-    for (let i = 0; i < frameIndex; i++) {
-      let staleFrame = this.frameBuffer.shift();
-      staleFrame.close();
-    }
-
-    let chosenFrame = this.frameBuffer[0];
-    debugLog('frame time delta = %dms (%d vs %d)', minTimeDelta/1000, timestamp, chosenFrame.timestamp)
-    return chosenFrame;
   }
 
   async fillFrameBuffer() {
@@ -126,7 +75,13 @@ export class VideoRenderer {
     this.frameBuffer.push(frame);
   }
 
-  paint(frame) {
-    this.canvasCtx.drawImage(frame, 0, 0, this.canvas.width, this.canvas.height);
+  dispose() {
+    for (const frame of this.frameBuffer) {
+      frame.close();
+    }
+    this.frameBuffer = [];
+    if (this.decoder.state !== 'closed') {
+      this.decoder.close();
+    }
   }
 }
